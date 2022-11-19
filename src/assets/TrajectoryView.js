@@ -1,0 +1,118 @@
+const d3 = require('d3');
+
+export default function Trajectories() {
+  let container;
+  let paths = d3.select("#abila_building").selectAll("path");
+  let cellSize = 7.5;
+
+  const dispatch = d3.dispatch('interval');
+
+  const x = d3.scaleLinear()
+    .domain([0, 91])
+    .range([cellSize * 0.5, (91 * cellSize) + (cellSize * 0.5)]);
+
+  const y = d3.scaleLinear()
+    .domain([0, 60])
+    .range([(60 * cellSize) + (cellSize * 0.5), cellSize * 0.5]);
+
+  const path = d3.line()
+    .x(d => x(d.x))
+    .y(d => y(d.y));
+
+  let timeExtent = [0, 10];
+
+  function isWithin(p, e) {
+    return ((p.x >= e[0][0]) && (p.x <= e[1][0])
+      && (p.y >= e[1][1]) && (p.y <= e[0][1]));
+  }
+
+  function brushended() {
+    if (!d3.event.selection) {
+      return;
+    }
+
+    // the extent measured in pixel should be mapped back to domain coordinates
+    const extent =
+      d3.event.selection.map(c => [x.invert(c[0]), y.invert(c[1])]);
+    const list = [];
+    container.datum().forEach((p) => { // for each person
+      const lastPoint = p.values[timeExtent[1] - 1];
+      if (isWithin(lastPoint, extent)) {
+        list.push({
+          id: p.person,
+        });
+      }
+    });
+    dispatch.call('interval', this, list);
+  }
+
+  const brush = d3.brush()
+    .on('end', brushended);
+
+  function redraw(_paths) {
+    _paths
+      .classed('selected', d => d.selected)
+      .attr('d', d => `${path(d.values.slice(timeExtent[0], timeExtent[1]))}m -2, 0 a 2,2 0 1,0 4,0 a 2,2 0 1,0 -4,0 `);
+  }
+
+  function me(selection) {
+    // draw all trajectories
+    container = selection;
+    paths = container.selectAll('path')
+      .data(container.datum(), d => d.person);
+
+    paths = paths
+      .enter()
+      .append('path')
+      .merge(paths)
+      .attr('stroke-width', 2)
+      .classed('person', true)
+      .classed('second', true)
+      .attr('fill', 'none')
+      .attr('opacity', 0.4);
+
+    redraw(paths);
+    container.append('g')
+      .attr('class', 'brush')
+      .call(brush);
+
+    // handler for selection of events
+    dispatch.on('interval.trajs', (list) => {
+      const persons = container.datum();
+      const ids = list.map(d => d.id);
+      persons.forEach((p) => {
+        if (ids.indexOf(p.person) >= 0) {
+          // eslint-disable-next-line no-param-reassign
+          p.selected = true;
+        } else {
+          // eslint-disable-next-line no-param-reassign
+          p.selected = false;
+        }
+      });
+      redraw(paths);
+    });
+  }
+
+  me.on = (eventType, handler) => {
+    dispatch.on(eventType, handler);
+    return me;
+  };
+
+  me.timeExtent = function _timeExtent(_) {
+    if (!arguments.length) return timeExtent;
+    timeExtent = _;
+    paths.attr('d', d => `${path(d.values.slice(timeExtent[0], timeExtent[1]))}m -2, 0 a 2,2 0 1,0 4,0 a 2,2 0 1,0 -4,0 `);
+    console.log(paths);
+    return me;
+  };
+
+
+  me.cellSize = function _cellSize(_) {
+    if (!arguments.length) return cellSize;
+    cellSize = _;
+    x.range([cellSize * 0.5, (91 * cellSize) + (cellSize * 0.5)]);
+    y.range([(60 * cellSize) + (cellSize * 0.5), cellSize * 0.5]);
+    return me;
+  };
+  return me;
+}
